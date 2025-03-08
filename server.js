@@ -16,10 +16,9 @@ const utilites = require('./utilities/index');
 require('./auth/passportConfig');
 
 // Ensure all Mongoose schemas are registered
-require('./models/army.model');
-require('./models/general.model');
-require('./models/wave.model');
-require('./models/glyph.model');
+require('./models/candy.model');
+require('./models/order.model');
+require('./models/store.model');
 require('./models/user.model');
 
 const app = express();

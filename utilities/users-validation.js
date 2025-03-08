@@ -39,8 +39,16 @@ usersValidate.userRules = () => {
       .trim()
       .escape()
       .notEmpty()
-      .isIn(['user', 'developer', 'admin'])
-      .withMessage('Role must be one of the following: user, developer, or admin')
+      .isIn(['admin', 'storeowner', 'driver', 'inventoryManager', 'temporary'])
+      .withMessage(
+        'Role must be one of the following: temporary, storeowner, driver, inventoryManager, or admin'
+      ),
+
+    body('phone_number')
+      .optional()
+      .trim()
+      .matches(/^\+1-\d{3}-\d{3}-\d{4}$/)
+      .withMessage('Phone number must be in the format: +1-XXX-XXX-XXXX')
   ];
 };
 
