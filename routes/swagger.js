@@ -36,10 +36,10 @@ router.use(
   '/api-docs',
   swaggerUi.serve,
   swaggerUi.setup(swaggerDocument, {
-    oauth: {
+    OAuth: {
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      scopes: ['profile', 'email'],
+      scopes: ['openid', 'profile', 'email'],
       usePkceWithAuthorizationCodeGrant: true,
       useBasicAuthenticationWithAccessCodeGrant: true
     },

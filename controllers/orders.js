@@ -1,6 +1,7 @@
 'use strict';
 
 const Order = require('../models/order.model');
+const mongoose = require('mongoose');
 
 // Retrieve all orders with optional filtering
 const getAllOrders = async (req, res) => {
@@ -12,10 +13,20 @@ const getAllOrders = async (req, res) => {
       query.delivery_status = req.query.status;
     }
     if (req.query.driver) {
-      query.deliverer_id = req.query.driver;
+      // Convert driver (deliverer_id) to ObjectId
+      if (mongoose.Types.ObjectId.isValid(req.query.driver)) {
+        query.deliverer_id = new mongoose.Types.ObjectId(req.query.driver);
+      } else {
+        return res.status(400).json({ message: 'Invalid driver ID format' });
+      }
     }
     if (req.query.candy) {
-      query['candy_ordered.candy_id'] = req.query.candy;
+      // Convert candy_ordered.candy_id to ObjectId
+      if (mongoose.Types.ObjectId.isValid(req.query.candy)) {
+        query['candy_ordered.candy_id'] = new mongoose.Types.ObjectId(req.query.candy);
+      } else {
+        return res.status(400).json({ message: 'Invalid candy ID format' });
+      }
     }
 
     const orders = await Order.find(query);

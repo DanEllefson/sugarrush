@@ -33,7 +33,7 @@
         "tags": ["auth"],
         "summary": "Authenticate using Google OAuth",
         "description": "Redirects users to Google's OAuth login page.",
-        "security": [{ "OAuth2": ["profile", "email"] }],
+        "security": [{ "OAuth2": ["openapi", "profile", "email"] }],
         "operationId": "googleAuth",
         "responses": {
           "302": {
@@ -95,7 +95,7 @@
         "summary": "Log out the user",
         "description": "Logs the user out of Google, invalidates the current access token, and blacklists the JWT via Redis.\n**Important:** After logout, click \"Authorize\" → \"Logout\" to clear Swagger's stored token.",
         "operationId": "userLogout",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Successfully logged out" },
           "400": { "description": "No token provided or invalid token" },
@@ -110,7 +110,7 @@
         "summary": "Retrieve all users",
         "description": "Fetch all registered users. Admins can see all users; other users can only see themselves.",
         "operationId": "getAllUsers",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "role",
@@ -160,7 +160,7 @@
         "summary": "Retrieve a specific user",
         "description": "Fetch details of a specific user by ID. Admins can access all users; other users can only access their own account.",
         "operationId": "getSingleUser",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -195,7 +195,7 @@
         "summary": "Update user information",
         "description": "Update user information by ID. Users can update their own `preferred_name` and `phone_number`. Admins can update roles and review temporary accounts.",
         "operationId": "updateSingleUser",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -208,15 +208,48 @@
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/User"
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "preferred_name": { "type": "string" },
+                  "phone_number": { 
+                    "type": "string", 
+                    "pattern": "^\\+1-\\d{3}-\\d{3}-\\d{4}$",
+                    "example": "+1-690-445-2710"
+                  },
+                  "role": { 
+                    "type": "string", 
+                    "enum": ["admin", "storeowner", "driver", "inventoryManager", "temporary"]
+                  }
+                }
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "User information successfully updated" },
-          "400": { "description": "Invalid ID format or request data" },
-          "401": { "description": "Unauthorized - User is not authenticated" },
-          "403": { "description": "Forbidden - User does not have access" },
-          "404": { "description": "User not found" },
-          "500": { "description": "Internal Server Error" }
+          "200": {
+            "description": "User updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "User updated successfully" },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input data" },
+          "401": { "description": "Unauthorized access" },
+          "403": { "description": "Forbidden - Not allowed to modify this user" },
+          "404": { "description": "User not found" }
         }
       },
       "delete": {
@@ -224,7 +257,7 @@
         "summary": "Delete a user account",
         "description": "Deletes a user account by ID. Users can delete their own account; admins can delete any account.",
         "operationId": "deleteSingleUser",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -251,7 +284,7 @@
         "tags": ["candy"],
         "summary": "Retrieve all candy items",
         "description": "Fetch all available candy items. Optional query parameters can be used to filter results.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "name",
@@ -305,7 +338,7 @@
         "tags": ["candy"],
         "summary": "Add a new candy item",
         "description": "Creates a new candy item in the inventory.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "$ref": "#/components/requestBodies/Candy"
         },
@@ -323,7 +356,7 @@
         "tags": ["candy"],
         "summary": "Retrieve a single candy item",
         "description": "Fetch details of a specific candy item by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -357,7 +390,7 @@
         "tags": ["candy"],
         "summary": "Update a candy item",
         "description": "Update an existing candy item's details by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -385,7 +418,7 @@
         "tags": ["candy"],
         "summary": "Delete a candy item",
         "description": "Remove a candy item from the inventory by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -412,7 +445,7 @@
         "tags": ["stores"],
         "summary": "Retrieve all stores",
         "description": "Fetch all available stores. Optional query parameters can be used to filter results.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "name",
@@ -428,8 +461,8 @@
             "in": "query",
             "description": "Filter stores by owner_id",
             "schema": {
-              "type": "string",
-              "format": "uuid"
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
             },
             "example": "676fc7533d1439022be2c2d8"
           }
@@ -457,7 +490,7 @@
         "tags": ["stores"],
         "summary": "Create a new store",
         "description": "Creates a new store and adds it to the database.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "$ref": "#/components/requestBodies/Store"
         },
@@ -475,7 +508,7 @@
         "tags": ["stores"],
         "summary": "Retrieve a specific store",
         "description": "Fetch details of a specific store by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -509,7 +542,7 @@
         "tags": ["stores"],
         "summary": "Update a store",
         "description": "Update store details by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -537,7 +570,7 @@
         "tags": ["stores"],
         "summary": "Delete a store",
         "description": "Remove a store from the database by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -564,7 +597,7 @@
         "tags": ["orders"],
         "summary": "Retrieve all orders",
         "description": "Fetch all available orders. Optional query parameters can be used to filter results.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "status",
@@ -581,8 +614,8 @@
             "in": "query",
             "description": "Filter orders by deliverer_id",
             "schema": {
-              "type": "string",
-              "format": "uuid"
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
             },
             "example": "679fc7533d1717094be2c5e6"
           },
@@ -591,8 +624,8 @@
             "in": "query",
             "description": "Filter orders containing a specific candy_id",
             "schema": {
-              "type": "string",
-              "format": "uuid"
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
             },
             "example": "679ff3933d1717094be2c645"
           }
@@ -620,7 +653,7 @@
         "tags": ["orders"],
         "summary": "Create a new order",
         "description": "Creates a new order and adds it to the database.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "$ref": "#/components/requestBodies/Order"
         },
@@ -638,7 +671,7 @@
         "tags": ["orders"],
         "summary": "Retrieve a specific order",
         "description": "Fetch details of a specific order by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -672,7 +705,7 @@
         "tags": ["orders"],
         "summary": "Update an order",
         "description": "Update an order by its ID. The `last_updated` field will be automatically updated with the current date and time.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -700,7 +733,7 @@
         "tags": ["orders"],
         "summary": "Delete an order",
         "description": "Remove an order from the database by its ID.",
-        "security": [{ "OAuth2": [] }],
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -992,13 +1025,20 @@
             }
           }
         }
+      },
+      "User": {
+        "description": "Request body for creating a new user.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        }
       }
     }
   },
   "security": [
-    {
-      "OAuth2": []
-    },
     {
       "bearerAuth": []
     }

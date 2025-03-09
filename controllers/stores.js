@@ -1,6 +1,7 @@
 'use strict';
 
 const Store = require('../models/store.model');
+const mongoose = require('mongoose');
 
 // Retrieve all stores with optional filtering
 const getAllStores = async (req, res) => {
@@ -12,7 +13,12 @@ const getAllStores = async (req, res) => {
       query.name = new RegExp(req.query.name, 'i'); // Case-insensitive search
     }
     if (req.query.owner) {
-      query.owner_id = req.query.owner;
+      // Convert string to ObjectId
+      if (mongoose.Types.ObjectId.isValid(req.query.owner)) {
+        query.owner_id = new mongoose.Types.ObjectId(req.query.owner);
+      } else {
+        return res.status(400).json({ message: 'Invalid owner_id format' });
+      }
     }
 
     const stores = await Store.find(query);
