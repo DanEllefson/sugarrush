@@ -10,8 +10,8 @@ const BASE_URL =
   process.env.NODE_ENV === 'production' ? process.env.REMOTE_BASE_URL : process.env.LOCAL_BASE_URL;
 
 // Update Swagger OAuth2 security schema with the correct URLs
-swaggerDocument.components.securitySchemes.oauth2.flows.authorizationCode.authorizationUrl = `${BASE_URL}/auth/google`;
-swaggerDocument.components.securitySchemes.oauth2.flows.authorizationCode.tokenUrl = `${BASE_URL}/auth/google/callback`;
+swaggerDocument.components.securitySchemes.OAuth2.flows.authorizationCode.authorizationUrl = `${BASE_URL}/auth/google`;
+swaggerDocument.components.securitySchemes.OAuth2.flows.authorizationCode.tokenUrl = `${BASE_URL}/auth/google/callback`;
 
 // Define the server URL for Swagger
 const SERVER_URL = [{ url: BASE_URL, description: 'Host server' }];

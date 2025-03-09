@@ -5,37 +5,47 @@ const redisClient = require('../utilities/redisClient');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 
-// Return all users if logged in as an admin, or return the current user
+// Retrieve all users with optional filtering (admins see all, others see themselves)
 const getAllUsers = async (req, res) => {
   try {
-    let users = await User.find();
+    const query = {};
+
+    // Apply optional filters
+    if (req.query.role) {
+      query.role = req.query.role;
+    }
+    if (req.query.name) {
+      query.username = new RegExp(req.query.name, 'i'); // Case-insensitive search for username
+    }
+
+    let users = await User.find(query);
+
     if (!users || users.length === 0) {
-      return res.status(404).json({ message: 'No users found in database' });
+      return res.status(404).json({ message: 'No matching users found' });
     }
 
     // Only admins can see all users. Regular users can only see themselves.
     if (req.user.role !== 'admin') {
-      const userIndex = users.findIndex((user) => user._id.toString() === req.user.userId);
-      users = users.slice(userIndex, userIndex + 1);
+      users = users.filter((user) => user._id.toString() === req.user.userId);
     }
 
     res.setHeader('Content-Type', 'application/json');
     res.status(200).json(users);
   } catch (err) {
-    res.status(400).json({ message: 'Error getting users', error: err.message });
+    res.status(500).json({ message: 'Error retrieving users', error: err.message });
   }
 };
 
-// Return any single user if logged in as an admin or the user themselves
+// Retrieve a single user (admins can see all users, others see themselves)
 const getSingleUser = async (req, res) => {
   try {
     if (!req.params.id) {
       return res.status(400).json({ message: 'ID parameter is required' });
     }
 
-    // Only admins can see all users. Regular users can only see themselves.
+    // Restrict access to the user themselves or an admin
     if (req.user.role !== 'admin' && req.user.userId !== req.params.id) {
-      return res.status(403).json({ message: 'Only the user or admin can view the selected user' });
+      return res.status(403).json({ message: 'Only the user or an admin can view this user' });
     }
 
     const user = await User.findById(req.params.id);
@@ -44,11 +54,11 @@ const getSingleUser = async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.status(200).json(user);
   } catch (err) {
-    res.status(400).json({ message: 'Error getting user', error: err.message });
+    res.status(500).json({ message: 'Error retrieving user', error: err.message });
   }
 };
 
-// Delete a single user (only accessible by the user or admin)
+// Delete a user (only accessible by the user themselves or an admin)
 const deleteSingleUser = async (req, res) => {
   try {
     if (!req.params.id) {
@@ -56,24 +66,22 @@ const deleteSingleUser = async (req, res) => {
     }
 
     if (req.user.role !== 'admin' && req.user.userId !== req.params.id) {
-      return res
-        .status(403)
-        .json({ message: 'Only the user or admin can delete the selected user' });
+      return res.status(403).json({ message: 'Only the user or an admin can delete this account' });
     }
 
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.setHeader('Content-Type', 'application/json');
-    res.status(200).json({ message: 'User deleted' });
+    res.status(200).json({ message: 'User successfully deleted' });
   } catch (error) {
-    res.status(400).json({ message: 'Failed to delete user', error: error.message });
+    res.status(500).json({ message: 'Failed to delete user', error: error.message });
   }
 };
 
-// Update user info (only accessible by the user or admin)
+// Update user info (only accessible by the user or an admin)
 const updateSingleUser = async (req, res) => {
-  const { preferred_name, role } = req.body;
+  const { preferred_name, phone_number, role } = req.body;
 
   try {
     if (!req.params.id) {
@@ -85,30 +93,34 @@ const updateSingleUser = async (req, res) => {
 
     // Only admins can update roles
     if (role && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Only admins can update roles' });
+      return res.status(403).json({ message: 'Only admins can update user roles' });
     }
 
-    // Only the user or an admin can update the preferred name
-    if (preferred_name && req.user.role !== 'admin' && req.user.userId !== user._id.toString()) {
+    // Only the user or an admin can update preferred_name or phone_number
+    if (
+      (preferred_name || phone_number) &&
+      req.user.role !== 'admin' &&
+      req.user.userId !== user._id.toString()
+    ) {
       return res
         .status(403)
-        .json({ message: 'Only the user or an admin can update the preferred name' });
+        .json({ message: 'Only the user or an admin can update this information' });
     }
 
     if (preferred_name) user.preferred_name = preferred_name;
+    if (phone_number) user.phone_number = phone_number;
     if (role) user.role = role;
 
     await user.save();
     res.json({ message: 'User updated successfully', user });
   } catch (err) {
-    res.status(400).json({ message: 'Error updating user', error: err.message });
+    res.status(500).json({ message: 'Error updating user', error: err.message });
   }
 };
 
-// Logout the user and revoke the Google token
+// Logout user and revoke OAuth token
 const userLogout = async (req, res) => {
   const authHeader = req.headers.authorization;
-
   if (!authHeader) {
     return res.status(400).json({ message: 'Authorization header missing.' });
   }
@@ -133,7 +145,7 @@ const userLogout = async (req, res) => {
       return res.status(400).json({ message: 'Invalid JWT provided.' });
     }
 
-    const expiresIn = decoded.exp - Math.floor(Date.now() / 1000); // Seconds until JWT expires
+    const expiresIn = decoded.exp - Math.floor(Date.now() / 1000); // Calculate token expiration
 
     if (expiresIn > 0) {
       await redisClient.set(token, 'blacklisted', { EX: expiresIn });
@@ -151,4 +163,10 @@ const userLogout = async (req, res) => {
   }
 };
 
-module.exports = { updateSingleUser, getAllUsers, getSingleUser, deleteSingleUser, userLogout };
+module.exports = {
+  getAllUsers,
+  getSingleUser,
+  deleteSingleUser,
+  updateSingleUser,
+  userLogout
+};
