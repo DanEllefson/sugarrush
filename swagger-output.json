@@ -1,40 +1,30 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "HeroScape API",
-    "description": "This is an API that accesses the HeroScape database. It allows access to armies, generals, glyphs, and wave release information.\n",
+    "title": "SugarRush API",
+    "description": "The SugarRush API enables candy distributors to manage inventory, store accounts, and deliveries efficiently. It provides endpoints for accessing candy data, managing store profiles and orders, and tracking deliveries. The API also includes user authentication via Google OAuth.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://localhost:8443",
-      "description": "Local HTTPS Host"
-    }
-  ],
   "tags": [
     {
       "name": "auth",
-      "description": "User authentication using Google OAuth"
+      "description": "Handles user authentication via Google OAuth"
     },
     {
       "name": "users",
-      "description": "User account management"
-    },  
-    {
-      "name": "armies",
-      "description": "Access to all of the armies in the database"
+      "description": "Manages user accounts and roles"
     },
     {
-      "name": "generals",
-      "description": "Access to all of the generals in the database"
+      "name": "candy",
+      "description": "Manages candy inventory, pricing, and stock levels"
     },
     {
-      "name": "waves",
-      "description": "Access to all of the wave releases for Heroscape"
+      "name": "stores",
+      "description": "Allows store owners to register, update, and manage store profiles"
     },
     {
-      "name": "glyphs",
-      "description": "Access to all of the glyphs in the database"
+      "name": "orders",
+      "description": "Processes store orders and tracks delivery status"
     }
   ],
   "paths": {
@@ -43,7 +33,7 @@
         "tags": ["auth"],
         "summary": "Authenticate using Google OAuth",
         "description": "Redirects users to Google's OAuth login page.",
-        "security": [{ "oauth2": ["profile", "email"] }],
+        "security": [{ "OAuth2": ["profile", "email"] }],
         "operationId": "googleAuth",
         "responses": {
           "302": {
@@ -59,7 +49,7 @@
         "summary": "Google OAuth callback",
         "description": "Handles the Google OAuth callback, verifies the user, and returns a JWT token. If successful, either redirects the user or returns the token in the response.",
         "operationId": "googleCallback",
-        "security": [{ "oauth2": [] }],
+        "security": [{ "OAuth2": [] }],
         "responses": {
           "200": {
             "description": "Successful authentication, returns a JWT token and user information",
@@ -84,633 +74,666 @@
             }
           },
           "302": {
-            "description": "Redirect to client application or dashboard after successful authentication"
+            "description": "Redirect to client application or dashboard after successful authentication",
+            "headers": {
+              "Location": {
+                "description": "URL where the user is redirected after successful login",
+                "schema": { "type": "string", "example": "https://yourfrontend.com/dashboard" }
+              }
+            }
           },
-          "400": {
-            "description": "Authentication failed"
-          }
+          "400": { "description": "Authentication failed" },
+          "401": { "description": "Unauthorized - Invalid credentials or token expired" },
+          "500": { "description": "Internal server error during authentication" }
         },
         "x-internal": true
       }
     },
+    "/users/logout": {
+      "post": {
+        "tags": ["users"],
+        "summary": "Log out the user",
+        "description": "Logs the user out of Google, invalidates the current access token, and blacklists the JWT via Redis.\n**Important:** After logout, click \"Authorize\" → \"Logout\" to clear Swagger's stored token.",
+        "operationId": "userLogout",
+        "security": [{ "OAuth2": [] }],
+        "responses": {
+          "200": { "description": "Successfully logged out" },
+          "400": { "description": "No token provided or invalid token" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "500": { "description": "Internal Server Error" }
+        }
+      }
+    },
     "/users": {
       "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Return all users",
-        "description": "Return all users in the database for admins. Other users can only view their own account.",
+        "tags": ["users"],
+        "summary": "Retrieve all users",
+        "description": "Fetch all registered users. Admins can see all users; other users can only see themselves.",
         "operationId": "getAllUsers",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "OAuth2": [] }],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Filter users by role (admin, storeowner, driver, inventoryManager, temporary)",
+            "schema": {
+              "type": "string",
+              "enum": ["admin", "storeowner", "driver", "inventoryManager", "temporary"]
+            },
+            "example": "temporary"
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Filter users by username",
+            "schema": {
+              "type": "string"
+            },
+            "example": "David Hillcrest"
+          }
+        ],
         "responses": {
-          "200": { "description": "Users found" },
+          "200": {
+            "description": "Successfully retrieved users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
           "400": { "description": "Failed to get users" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "You must be logged in to view user accounts" },
-          "404": { "description": "No users found in the database" }
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "No users found in the database" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
     "/users/{id}": {
       "get": {
         "tags": ["users"],
-        "summary": "Return a single user",
-        "description": "For admins, return a single user from the database using the user id value. For other users, return their own account.",
+        "summary": "Retrieve a specific user",
+        "description": "Fetch details of a specific user by ID. Admins can access all users; other users can only access their own account.",
         "operationId": "getSingleUser",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          {
-        "name": "id",
-        "in": "path",
-        "description": "Id of user to return",
-        "required": true,
-        "style": "simple",
-        "explode": false,
-        "schema": {
-          "type": "string"
-        }
-          }
-        ],
-        "responses": {
-          "200": { "description": "User found" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be logged in to view user accounts" },
-          "404": { "description": "User not found" }
-        }
-      },
-      "put": {
-        "tags": ["users"],
-        "summary": "Update user account",
-        "description": "Allows authenticated users to update their username or role (admins only for role updates).",
-        "operationId": "updateSingleUser",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of user to update",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the user",
             "schema": {
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "preferred_name": { "type": "string" },
-                  "role": { "type": "string", "enum": ["user", "developer", "admin"] }
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved user details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
                 }
               }
             }
+          },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "User not found" },
+          "500": { "description": "Internal Server Error" }
+        }
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Update user information",
+        "description": "Update user information by ID. Users can update their own `preferred_name` and `phone_number`. Admins can update roles and review temporary accounts.",
+        "operationId": "updateSingleUser",
+        "security": [{ "OAuth2": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID of the user",
+            "schema": {
+              "type": "string"
+            }
           }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/User"
         },
         "responses": {
-          "200": { "description": "User updated successfully" },
-          "400": { "description": "Invalid request" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: Only admins can change roles" },
-          "404": { "description": "User not found" }
+          "200": { "description": "User information successfully updated" },
+          "400": { "description": "Invalid ID format or request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "User not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "delete": {
         "tags": ["users"],
-        "summary": "Delete user account",
-        "description": "Allows authenticated users to delete their account.",
+        "summary": "Delete a user account",
+        "description": "Deletes a user account by ID. Users can delete their own account; admins can delete any account.",
         "operationId": "deleteSingleUser",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of user to delete",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the user",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": { "description": "User deleted" },
-          "400": { "description": "Invalid request" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: Only the owner of the account or admins can delete this user" },
-          "404": { "description": "User not found" }
+          "200": { "description": "User successfully deleted" },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "User not found" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/users/logout": {
-      "post": {
-        "tags": ["users"],
-        "summary": "Logout user",
-        "description": "Logs out the user by revoking the OAuth token.\n**Important:** After logout, click \"Authorize\" → \"Logout\" to clear Swagger's stored token.",
-        "operationId": "userLogout",
-        "security": [{ "bearerAuth": [] }],
-        "responses": {
-          "200": { "description": "Successfully logged out" },
-          "400": { "description": "No token provided or invalid token" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "500": { "description": "Error during logout process" }
-        }
-      }
-    },    
-    "/armies": {
+    "/candy": {
       "get": {
-        "tags": [
-          "armies"
+        "tags": ["candy"],
+        "summary": "Retrieve all candy items",
+        "description": "Fetch all available candy items. Optional query parameters can be used to filter results.",
+        "security": [{ "OAuth2": [] }],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Filter candy by name",
+            "schema": {
+              "type": "string"
+            },
+            "example": "snickers"
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "description": "Filter candy by description",
+            "schema": {
+              "type": "string"
+            },
+            "example": "chocolate"
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "description": "Filter candy by shipping container type",
+            "schema": {
+              "type": "string",
+              "enum": ["pallet", "crate", "cardboardBox", "displayBox"]
+            },
+            "example": "displayBox"
+          }
         ],
-        "summary": "Return all armies",
-        "description": "Return all armies in the database",
-        "operationId": "getAllArmies",
         "responses": {
-          "200": { "description": "Armies found"},
-          "400": { "description": "Failed to get armies" },
-          "404": { "description": "No armies found in the database" }
+          "200": {
+            "description": "Successfully retrieved candy items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Candy"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "post": {
-        "tags": [
-          "armies"
-        ],
-        "summary": "Create a new army",
-        "description": "Create a new army in the database (developer or admin only)",
-        "operationId": "createSingleArmy",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["candy"],
+        "summary": "Add a new candy item",
+        "description": "Creates a new candy item in the inventory.",
+        "security": [{ "OAuth2": [] }],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Armies"
+          "$ref": "#/components/requestBodies/Candy"
         },
         "responses": {
-          "201": { "description": "New army created successfully" },
-          "400": { "description": "Failed to create army" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to create an army" }
+          "201": { "description": "Candy item successfully created" },
+          "400": { "description": "Invalid request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/armies/{id}": {
+    "/candy/{id}": {
       "get": {
-        "tags": [
-          "armies"
-        ],
-        "summary": "Return a single army",
-        "description": "Return a single army from the database using the army id value",
-        "operationId": "getSingleArmy",
+        "tags": ["candy"],
+        "summary": "Retrieve a single candy item",
+        "description": "Fetch details of a specific candy item by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of army to return",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the candy item",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": { "description": "Army found" },
-          "400": { "description": "Invalid ID supplied" },
-          "404": { "description": "Army not found" }
+          "200": {
+            "description": "Successfully retrieved candy item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candy"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Candy item not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "put": {
-        "tags": [
-          "armies"
-        ],
-        "summary": "Update an existing army",
-        "description": "Update a single army from the database using the army id value (developer or admin only)",
-        "operationId": "updateSingleArmy",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["candy"],
+        "summary": "Update a candy item",
+        "description": "Update an existing candy item's details by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of army to update",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the candy item",
             "schema": {
               "type": "string"
             }
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Armies"
+          "$ref": "#/components/requestBodies/Candy"
         },
         "responses": {
-          "204": { "description": "Army updated successfully" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to update an army" },
-          "404": { "description": "Army not found" }
+          "200": { "description": "Candy item successfully updated" },
+          "400": { "description": "Invalid ID format or request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Candy item not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "delete": {
-        "tags": [
-          "armies"
-        ],
-        "summary": "Delete a single army",
-        "description": "Delete a single army from the database using the army id value (admin only)",
-        "operationId": "deleteSingleArmy",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["candy"],
+        "summary": "Delete a candy item",
+        "description": "Remove a candy item from the inventory by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of army to delete",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the candy item",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-        "200": { "description": "Army deleted" },
-        "400": { "description": "Invalid ID supplied" },
-        "401": { "description": "You are not authorized to access this endpoint" },
-        "403": { "description": "Forbidden: You must be an admin to delete an army" },
-        "404": { "description": "Army not found" }
+          "200": { "description": "Candy item successfully deleted" },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Candy item not found" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/generals": {
+    "/stores": {
       "get": {
-        "tags": [
-          "generals"
+        "tags": ["stores"],
+        "summary": "Retrieve all stores",
+        "description": "Fetch all available stores. Optional query parameters can be used to filter results.",
+        "security": [{ "OAuth2": [] }],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Filter stores by name",
+            "schema": {
+              "type": "string"
+            },
+            "example": "walgreens"
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Filter stores by owner_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "676fc7533d1439022be2c2d8"
+          }
         ],
-        "summary": "Return all generals",
-        "description": "Return all generals in the database",
-        "operationId": "getAllGenerals",
         "responses": {
-          "200": { "description": "Generals found" },
-          "400": { "description": "Failed to get generals" },
-          "404": { "description": "No generals found in the database" }
+          "200": {
+            "description": "Successfully retrieved stores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Store"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "post": {
-        "tags": [
-          "generals"
-        ],
-        "summary": "Create a new general",
-        "description": "Create a new general in the database (developer or admin only)",
-        "operationId": "createSingleGeneral",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["stores"],
+        "summary": "Create a new store",
+        "description": "Creates a new store and adds it to the database.",
+        "security": [{ "OAuth2": [] }],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Generals"
+          "$ref": "#/components/requestBodies/Store"
         },
         "responses": {
-          "201": { "description": "New general created successfully" },
-          "400": { "description": "Failed to create general" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to create a general" }
+          "201": { "description": "Store successfully created" },
+          "400": { "description": "Invalid request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/generals/{id}": {
+    "/stores/{id}": {
       "get": {
-        "tags": [
-          "generals"
-        ],
-        "summary": "Return a single general",
-        "description": "Return a single general from the database using the general id value",
-        "operationId": "getSingleGeneral",
+        "tags": ["stores"],
+        "summary": "Retrieve a specific store",
+        "description": "Fetch details of a specific store by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of general to return",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the store",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": { "description": "General found" },
-          "400": { "description": "Invalid ID supplied" },
-          "404": { "description": "General not found" }
+          "200": {
+            "description": "Successfully retrieved store details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Store"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Store not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "put": {
-        "tags": [
-          "generals"
-        ],
-        "summary": "Update an existing general",
-        "description": "Update a single general from the database using the general id value (developer or admin only)",
-        "operationId": "updateSingleGeneral",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["stores"],
+        "summary": "Update a store",
+        "description": "Update store details by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of general to update",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the store",
             "schema": {
               "type": "string"
             }
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Generals"
+          "$ref": "#/components/requestBodies/Store"
         },
         "responses": {
-          "204": { "description": "General updated successfully" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to update a general" },
-          "404": { "description": "General not found" }
+          "200": { "description": "Store successfully updated" },
+          "400": { "description": "Invalid ID format or request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Store not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "delete": {
-        "tags": [
-          "generals"
-        ],
-        "summary": "Delete a single general",
-        "description": "Delete a single general from the database using the general id value (admin only)",
-        "operationId": "deleteSingleGeneral",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["stores"],
+        "summary": "Delete a store",
+        "description": "Remove a store from the database by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of general to delete",
             "required": true,
-            "style": "simple",
-            "explode": false
+            "description": "ID of the store",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "200": { "description": "General deleted" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be an admin to delete a general" },
-          "404": { "description": "General not found" }
+          "200": { "description": "Store successfully deleted" },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Store not found" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/waves": {
+    "/orders": {
       "get": {
-        "tags": [
-          "waves"
+        "tags": ["orders"],
+        "summary": "Retrieve all orders",
+        "description": "Fetch all available orders. Optional query parameters can be used to filter results.",
+        "security": [{ "OAuth2": [] }],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter orders by delivery status (pending, shipped, delivered)",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "shipped", "delivered"]
+            },
+            "example": "pending"
+          },
+          {
+            "name": "driver",
+            "in": "query",
+            "description": "Filter orders by deliverer_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "679fc7533d1717094be2c5e6"
+          },
+          {
+            "name": "candy",
+            "in": "query",
+            "description": "Filter orders containing a specific candy_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "679ff3933d1717094be2c645"
+          }
         ],
-        "summary": "Return all waves",
-        "description": "Return all waves in the database",
-        "operationId": "getAllWaves",
         "responses": {
-          "200": { "description": "Waves found" },
-          "400": { "description": "Failed to get waves" },
-          "404": { "description": "No waves found in the database" }
+          "200": {
+            "description": "Successfully retrieved orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Order"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "post": {
-        "tags": [
-          "waves"
-        ],
-        "summary": "Create a new wave",
-        "description": "Create a new wave in the database (developer or admin only)",
-        "operationId": "createSingleWave",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["orders"],
+        "summary": "Create a new order",
+        "description": "Creates a new order and adds it to the database.",
+        "security": [{ "OAuth2": [] }],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Waves"
+          "$ref": "#/components/requestBodies/Order"
         },
         "responses": {
-          "201": { "description": "New wave created successfully" },
-          "400": { "description": "Failed to create wave" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to create a wave" }
+          "201": { "description": "Order successfully created" },
+          "400": { "description": "Invalid request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     },
-    "/waves/{id}": {
+    "/orders/{id}": {
       "get": {
-        "tags": [
-          "waves"
-        ],
-        "summary": "Return a single wave",
-        "description": "Return a single wave from the database using the wave id value",
-        "operationId": "getSingleWave",
+        "tags": ["orders"],
+        "summary": "Retrieve a specific order",
+        "description": "Fetch details of a specific order by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of wave to return",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the order",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": { "description": "Wave found" },
-          "400": { "description": "Invalid ID supplied" },
-          "404": { "description": "Wave not found" }
+          "200": {
+            "description": "Successfully retrieved order details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Order not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "put": {
-        "tags": [
-          "waves"
-        ],
-        "summary": "Update an existing wave",
-        "description": "Update a single wave from the database using the wave id value (developer or admin only)",
-        "operationId": "updateSingleWave",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["orders"],
+        "summary": "Update an order",
+        "description": "Update an order by its ID. The `last_updated` field will be automatically updated with the current date and time.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of wave to update",
             "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the order",
             "schema": {
               "type": "string"
             }
           }
         ],
         "requestBody": {
-          "$ref": "#/components/requestBodies/Waves"
+          "$ref": "#/components/requestBodies/Order"
         },
         "responses": {
-          "204": { "description": "Wave updated successfully" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to update a wave" },
-          "404": { "description": "Wave not found" }
+          "200": { "description": "Order successfully updated" },
+          "400": { "description": "Invalid ID format or request data" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Order not found" },
+          "500": { "description": "Internal Server Error" }
         }
       },
       "delete": {
-        "tags": [
-          "waves"
-        ],
-        "summary": "Delete a single wave",
-        "description": "Delete a single wave from the database using the wave id value (admin only)",
-        "operationId": "deleteSingleWave",
-        "security": [{ "bearerAuth": [] }],
+        "tags": ["orders"],
+        "summary": "Delete an order",
+        "description": "Remove an order from the database by its ID.",
+        "security": [{ "OAuth2": [] }],
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Id of wave to delete",
             "required": true,
-            "style": "simple",
-            "explode": false
-          }
-        ],
-        "responses": {
-          "200": { "description": "Wave deleted" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be an admin to delete a wave" },
-          "404": { "description": "Wave not found" }
-        }
-      }
-    },
-    "/glyphs": {
-      "get": {
-        "tags": [
-          "glyphs"
-        ],
-        "summary": "Return all glyphs",
-        "description": "Return all glyphs in the database",
-        "operationId": "getAllGlyphs",
-        "responses": {
-          "200": { "description": "Glyphs found" },
-          "400": { "description": "Failed to get glyphs" },
-          "404": { "description": "No glyphs found in the database" }
-        }
-      },
-      "post": {
-        "tags": [
-          "glyphs"
-        ],
-        "summary": "Create a new glyph",
-        "description": "Create a new glyph in the database (developer or admin only)",
-        "operationId": "createSingleGlyph",
-        "security": [{ "bearerAuth": [] }],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Glyphs"
-        },
-        "responses": {
-          "201": { "description": "New glyph created successfully" },
-          "400": { "description": "Failed to create glyph" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to create a glyph" }
-        }
-      }
-    },
-    "/glyphs/{id}": {
-      "get": {
-        "tags": [
-          "glyphs"
-        ],
-        "summary": "Return a single glyph",
-        "description": "Return a single glyph from the database using the glyph id value",
-        "operationId": "getSingleGlyph",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Id of glyph to return",
-            "required": true,
-            "style": "simple",
-            "explode": false,
+            "description": "ID of the order",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": { "description": "Glyph found" },
-          "400": { "description": "Invalid ID supplied" },
-          "404": { "description": "Glyph not found" }
-        }
-      },
-      "put": {
-        "tags": [
-          "glyphs"
-        ],
-        "summary": "Update an existing glyph",
-        "description": "Update a single glyph from the database using the glyph id value (developer or admin only)",
-        "operationId": "updateSingleGlyph",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Id of glyph to update",
-            "required": true,
-            "style": "simple",
-            "explode": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "$ref": "#/components/requestBodies/Glyphs"
-        },
-        "responses": {
-          "204": { "description": "Glyph updated successfully" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be a developer or admin to update a glyph" },
-          "404": { "description": "Glyph not found" }
-        }
-      },
-      "delete": {
-        "tags": [
-          "glyphs"
-        ],
-        "summary": "Delete a single glyph",
-        "description": "Delete a single glyph from the database using the glyph id value (admin only)",
-        "operationId": "deleteSingleGlyph",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Id of glyph to delete",
-            "required": true,
-            "style": "simple",
-            "explode": false
-          }
-        ],
-        "responses": {
-          "200": { "description": "Glyph deleted" },
-          "400": { "description": "Invalid ID supplied" },
-          "401": { "description": "You are not authorized to access this endpoint" },
-          "403": { "description": "Forbidden: You must be an admin to delete a glyph" },
-          "404": { "description": "Glyph not found" }
+          "200": { "description": "Order successfully deleted" },
+          "400": { "description": "Invalid ID format" },
+          "401": { "description": "Unauthorized - User is not authenticated" },
+          "403": { "description": "Forbidden - User does not have access" },
+          "404": { "description": "Order not found" },
+          "500": { "description": "Internal Server Error" }
         }
       }
     }
   },
   "components": {
     "securitySchemes": {
-      "oauth2": {
+      "OAuth2": {
         "type": "oauth2",
+        "description": "OAuth2 authentication with Google",
         "flows": {
           "authorizationCode": {
             "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
             "tokenUrl": "https://oauth2.googleapis.com/token",
             "scopes": {
+              "openid": "Authenticate user and retrieve ID token",
               "profile": "Access user profile",
               "email": "Access user email"
             }
@@ -720,167 +743,264 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "JWT authorization using Bearer token"
       }
     },
     "schemas": {
       "User": {
         "type": "object",
         "properties": {
-          "googleId": { "type": "string" },
+          "_id": { "type": "string", "description": "MongoDB ObjectId" },
+          "google_id": { "type": "string" },
           "username": { "type": "string" },
-          "email": { "type": "string" },
-          "role": { "type": "string", "enum": ["user", "developer", "admin"] },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "Armies": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
+          "email": { "type": "string", "format": "email" },
+          "preferred_name": { "type": "string" },
+          "phone_number": { 
+            "type": "string", 
+            "pattern": "^\\+1-\\d{3}-\\d{3}-\\d{4}$",
+            "example": "+1-690-445-2710"
           },
-          "type": {
-            "type": "string"
+          "role": { 
+            "type": "string", 
+            "enum": ["admin", "storeowner", "driver", "inventoryManager", "temporary"]
           },
-          "general": {
-            "type": "string"
-          },
-          "attack": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "defense": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "move": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "range": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "life": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "cost": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "specialPowers": {
-            "type": "string"
-          },
-          "class": {
-            "type": "string"
-          },
-          "species": {
-            "type": "string"
-          },
-          "personality": {
-            "type": "string"
-          },
-          "size": {
-            "type": "string"
-          },
-          "height": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "url": {
-            "type": "string"
-          },
-          "wave": {
-            "type": "string"
+          "date_created": { 
+            "type": "string", 
+            "format": "date-time", 
+            "example": "2023-08-01T12:00:00Z"
           }
         }
       },
-      "Generals": {
+      "Candy": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
+          "_id": { "type": "string", "description": "MongoDB ObjectId" },
+          "name": { 
+            "type": "string", 
+            "description": "Name of the candy",
+            "example": "Snickers"
           },
-          "background": {
-            "type": "string"
+          "description": { 
+            "type": "string", 
+            "description": "Brief description of the candy",
+            "example": "Milk chocolate, peanuts, caramel, and nougat."
           },
-          "symbol": {
-            "type": "string"
+          "shipping_container": { 
+            "type": "string", 
+            "enum": ["pallet", "crate", "cardboardBox", "displayBox"],
+            "description": "The type of shipping container used for packaging",
+            "example": "pallet"
+          },
+          "price_per_unit": { 
+            "type": "number", 
+            "format": "float", 
+            "minimum": 0.01,
+            "description": "Price per individual unit of the candy",
+            "example": 1.5
+          },
+          "stock_quantity": { 
+            "type": "integer", 
+            "minimum": 0, 
+            "description": "Number of candy units available in stock",
+            "example": 1000
+          },
+          "supplier_name": { 
+            "type": "string", 
+            "description": "Name of the supplier or manufacturer",
+            "example": "Mars, Inc."
+          },
+          "date_added": { 
+            "type": "string", 
+            "format": "date", 
+            "description": "Date when the candy was added to inventory",
+            "example": "2023-01-01"
           }
         }
       },
-      "Waves": {
+      "Store": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
+          "_id": { 
+            "type": "string", 
+            "description": "MongoDB ObjectId of the store" 
           },
-          "releaseDate": {
-            "type": "string",
-            "format": "date"
+          "name": { 
+            "type": "string", 
+            "description": "The name of the store",
+            "example": "Candy Corner"
           },
-          "description": {
-            "type": "string"
+          "street": { 
+            "type": "string", 
+            "description": "Street address of the store",
+            "example": "123 Sweet St"
+          },
+          "city": { 
+            "type": "string", 
+            "description": "City where the store is located",
+            "example": "Los Angeles"
+          },
+          "state": { 
+            "type": "string", 
+            "description": "State where the store is located (2-letter abbreviation)",
+            "example": "CA"
+          },
+          "zip_code": { 
+            "type": "string", 
+            "description": "ZIP code of the store location",
+            "pattern": "^\\d{5}(-\\d{4})?$",
+            "example": "90001"
+          },
+          "phone_number": { 
+            "type": "string", 
+            "description": "Contact phone number of the store",
+            "pattern": "^\\+1-\\d{3}-\\d{3}-\\d{4}$",
+            "example": "+1-323-555-1234"
+          },
+          "email": { 
+            "type": "string", 
+            "format": "email",
+            "description": "Store's contact email address",
+            "example": "info@candycorner.com"
+          },
+          "owner_id": { 
+            "type": "string", 
+            "description": "MongoDB ObjectId referencing the store owner",
+            "example": "67cb9b89b39c3bf08c3d592b"
+          },
+          "operating_hours": { 
+            "type": "string", 
+            "description": "Operating hours of the store",
+            "example": "10:00 AM - 6:00 PM"
+          },
+          "website": { 
+            "type": "string", 
+            "format": "uri",
+            "description": "Store's website URL",
+            "example": "http://www.candycorner.com"
           }
         }
       },
-      "Glyphs": {
+      "Order": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
+          "_id": { 
+            "type": "string", 
+            "description": "MongoDB ObjectId of the order" 
           },
-          "wave": {
-            "type": "string"
+          "store_id": { 
+            "type": "string", 
+            "description": "MongoDB ObjectId referencing the store that placed the order",
+            "example": "67cb80cab39c3bf08c3d590b"
           },
-          "summary": {
-            "type": "string"
+          "deliverer_id": { 
+            "type": "string", 
+            "description": "MongoDB ObjectId referencing the user (driver) delivering the order",
+            "example": "67cb9b89b39c3bf08c3d592c"
           },
-          "description": {
-            "type": "string"
+          "candy_ordered": { 
+            "type": "array", 
+            "description": "List of candy items ordered and their quantities",
+            "items": {
+              "type": "object",
+              "properties": {
+                "candy_id": { 
+                  "type": "string", 
+                  "description": "MongoDB ObjectId referencing a candy item",
+                  "example": "67cb801eb39c3bf08c3d58dc"
+                },
+                "quantity": { 
+                  "type": "integer", 
+                  "minimum": 1,
+                  "description": "Quantity of the candy item ordered",
+                  "example": 30
+                }
+              }
+            }
+          },
+          "total_price": { 
+            "type": "number", 
+            "format": "float", 
+            "minimum": 0.01,
+            "description": "Total price of the order",
+            "example": 64.8
+          },
+          "date_created": { 
+            "type": "string", 
+            "format": "date-time", 
+            "description": "Timestamp when the order was created",
+            "example": "2024-03-01T12:00:00Z"
+          },
+          "last_updated": { 
+            "type": "string", 
+            "format": "date-time", 
+            "description": "Timestamp when the order was last updated",
+            "example": "2024-03-02T08:15:30Z"
+          },
+          "delivery_status": { 
+            "type": "string", 
+            "enum": ["pending", "shipped", "delivered"],
+            "description": "Current status of the order delivery",
+            "example": "pending"
+          },
+          "delivery_address": { 
+            "type": "string", 
+            "description": "Address where the order will be delivered",
+            "example": "123 Sweet St, Los Angeles, CA 90001"
+          },
+          "delivery_contact": { 
+            "type": "string", 
+            "description": "Name of the contact person for the delivery",
+            "example": "Maria Lopez"
+          },
+          "delivery_phone_number": { 
+            "type": "string", 
+            "pattern": "^\\+1-\\d{3}-\\d{3}-\\d{4}$",
+            "description": "Phone number of the delivery contact",
+            "example": "+1-323-555-1234"
           }
         }
       }
     },
     "requestBodies": {
-      "Armies": {
+      "Candy": {
+        "description": "Request body for creating a new candy item.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/Armies"
+              "$ref": "#/components/schemas/Candy"
             }
           }
         }
       },
-      "Generals": {
+      "Store": {
+        "description": "Request body for creating a new store.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/Generals"
+              "$ref": "#/components/schemas/Store"
             }
           }
         }
       },
-      "Waves": {
+      "Order": {
+        "description": "Request body for creating a new order.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/Waves"
-            }
-          }
-        }
-      },
-      "Glyphs": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Glyphs"
+              "$ref": "#/components/schemas/Order"
             }
           }
         }
       }
     }
-  }
+  },
+  "security": [
+    {
+      "OAuth2": []
+    },
+    {
+      "bearerAuth": []
+    }
+  ]
 }
